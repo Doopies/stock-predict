@@ -233,6 +233,68 @@ function ChartCard({
       </div>
     </div>
   );
+}: {
+  title: string;
+  history: PricePoint[];
+  future: PricePoint[];
+}) {
+  const width = 900;
+  const height = 320;
+  const historyValues = history.map((d) => d.close);
+  const ma7Values = history.map((d) => d.ma7 ?? d.close);
+  const ma30Values = history.map((d) => d.ma30 ?? d.close);
+  const forecastValues = future.map((d) => d.forecast ?? 0);
+
+  const allValues = [...historyValues, ...forecastValues];
+  const min = Math.min(...allValues);
+  const max = Math.max(...allValues);
+  const padding = 20;
+  const usableWidth = width - padding * 2;
+  const usableHeight = height - padding * 2;
+
+  const historyPath = buildLinePath(historyValues, width * 0.82, height, padding);
+  const ma7Path = buildLinePath(ma7Values, width * 0.82, height, padding);
+  const ma30Path = buildLinePath(ma30Values, width * 0.82, height, padding);
+
+  const forecastPath = forecastValues
+    .map((value, index) => {
+      const x = width * 0.82 + (index / Math.max(1, forecastValues.length - 1)) * (width * 0.18 - padding);
+      const y = padding + (1 - (value - min) / Math.max(1, max - min || 1)) * usableHeight;
+      return `${index === 0 ? "M" : "L"}${x},${y}`;
+    })
+    .join(" ");
+
+  return (
+    <div style={styles.card}>
+      <div style={styles.sectionTitle}>{title}</div>
+      <div style={{ overflowX: "auto" }}>
+        <svg viewBox={`0 0 ${width} ${height}`} style={{ width: "100%", minWidth: 600, height: 320, display: "block" }}>
+          <rect x="0" y="0" width={width} height={height} fill="#ffffff" rx="16" />
+          {[0, 1, 2, 3].map((i) => (
+            <line
+              key={i}
+              x1={20}
+              y1={20 + i * 70}
+              x2={width - 20}
+              y2={20 + i * 70}
+              stroke="#e2e8f0"
+              strokeDasharray="4 4"
+            />
+          ))}
+          <path d={historyPath} fill="none" stroke="#2563eb" strokeWidth="3" />
+          <path d={ma7Path} fill="none" stroke="#10b981" strokeWidth="2" />
+          <path d={ma30Path} fill="none" stroke="#f59e0b" strokeWidth="2" />
+          <path d={forecastPath} fill="none" stroke="#7c3aed" strokeWidth="3" strokeDasharray="8 6" />
+        </svg>
+      </div>
+      <div style={{ display: "flex", gap: 16, flexWrap: "wrap", marginTop: 12, fontSize: 13, color: "#475569" }}>
+        <span>蓝线：收盘价</span>
+        <span>绿线：MA7</span>
+        <span>橙线：MA30</span>
+        <span>紫线：预测</span>
+      </div>
+    </div>
+  );
 }
 
 const styles = {
@@ -335,12 +397,8 @@ export default function StockForecastSimple() {
   const latestHistory = shownHistory[shownHistory.length - 1];
   const firstHistory = shownHistory[0];
   const latestForecast = futureData[futureData.length - 1];
-  const rangeChange =
-    latestHistory && firstHistory ? round(((latestHistory.close - firstHistory.close) / firstHistory.close) * 100) : 0;
-  const forecastChange =
-    latestHistory && latestForecast?.forecast
-      ? round(((latestForecast.forecast - latestHistory.close) / latestHistory.close) * 100)
-      : 0;
+  const rangeChange = latestHistory && firstHistory ? round(((latestHistory.close - firstHistory.close) / firstHistory.close) * 100) : 0;
+  const forecastChange = latestHistory && latestForecast?.forecast ? round(((latestForecast.forecast - latestHistory.close) / latestHistory.close) * 100) : 0;
   const insight = shownHistory.length ? buildInsight(shownHistory) : "等待数据加载";
   const marketSnapshot = buildMarketSnapshot(activeTicker, latestHistory?.close || 100);
   const isMobile = typeof window !== "undefined" && window.innerWidth < 900;
@@ -365,23 +423,14 @@ export default function StockForecastSimple() {
               />
               <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 10 }}>
                 {STOCK_SUGGESTIONS.map((item) => (
-                  <button
-                    key={item}
-                    style={styles.chip}
-                    onClick={() => {
-                      setTickerInput(item);
-                      loadData(item);
-                    }}
-                  >
+                  <button key={item} style={styles.chip} onClick={() => { setTickerInput(item); loadData(item); }}>
                     {item}
                   </button>
                 ))}
               </div>
             </div>
             <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-              <button style={styles.button} onClick={() => loadData(tickerInput)}>
-                {loading ? "加载中..." : "开始分析"}
-              </button>
+              <button style={styles.button} onClick={() => loadData(tickerInput)}>{loading ? "加载中..." : "开始分析"}</button>
             </div>
           </div>
 
@@ -445,8 +494,7 @@ export default function StockForecastSimple() {
                   <div style={{ marginTop: 4, fontSize: 18, fontWeight: 700 }}>{item.ticker}</div>
                   <div style={{ marginTop: 10, fontSize: 28, fontWeight: 800 }}>${item.price}</div>
                   <div style={{ marginTop: 4, color: item.change >= 0 ? "#059669" : "#e11d48", fontWeight: 700 }}>
-                    {item.change >= 0 ? "+" : ""}
-                    {item.change}%
+                    {item.change >= 0 ? "+" : ""}{item.change}%
                   </div>
                 </div>
               ))}
