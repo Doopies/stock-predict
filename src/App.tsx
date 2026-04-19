@@ -186,7 +186,6 @@ function ChartCard({
   const min = Math.min(...allValues);
   const max = Math.max(...allValues);
   const padding = 20;
-  const usableWidth = width - padding * 2;
   const usableHeight = height - padding * 2;
 
   const historyPath = buildLinePath(historyValues, width * 0.82, height, padding);
