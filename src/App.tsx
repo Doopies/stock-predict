@@ -172,7 +172,68 @@ function ChartCard({
   title,
   history,
   future,
+}: {
+  title: string;
+  history: PricePoint[];
+  future: PricePoint[];
+}) {
+  const width = 900;
+  const height = 320;
+  const historyValues = history.map((d) => d.close);
+  const ma7Values = history.map((d) => d.ma7 ?? d.close);
+  const ma30Values = history.map((d) => d.ma30 ?? d.close);
+  const forecastValues = future.map((d) => d.forecast ?? 0);
 
+  const allValues = [...historyValues, ...forecastValues];
+  const min = Math.min(...allValues);
+  const max = Math.max(...allValues);
+  const padding = 20;
+  const usableHeight = height - padding * 2;
+
+  const historyPath = buildLinePath(historyValues, width * 0.82, height, padding);
+  const ma7Path = buildLinePath(ma7Values, width * 0.82, height, padding);
+  const ma30Path = buildLinePath(ma30Values, width * 0.82, height, padding);
+
+  const forecastPath = forecastValues
+    .map((value, index) => {
+      const x = width * 0.82 + (index / Math.max(1, forecastValues.length - 1)) * (width * 0.18 - padding);
+      const y = padding + (1 - (value - min) / Math.max(1, max - min || 1)) * usableHeight;
+      return `${index === 0 ? "M" : "L"}${x},${y}`;
+    })
+    .join(" ");
+
+  return (
+    <div style={styles.card}>
+      <div style={styles.sectionTitle}>{title}</div>
+      <div style={{ overflowX: "auto" }}>
+        <svg viewBox={`0 0 ${width} ${height}`} style={{ width: "100%", minWidth: 600, height: 320, display: "block" }}>
+          <rect x="0" y="0" width={width} height={height} fill="#ffffff" rx="16" />
+          {[0, 1, 2, 3].map((i) => (
+            <line
+              key={i}
+              x1={20}
+              y1={20 + i * 70}
+              x2={width - 20}
+              y2={20 + i * 70}
+              stroke="#e2e8f0"
+              strokeDasharray="4 4"
+            />
+          ))}
+          <path d={historyPath} fill="none" stroke="#2563eb" strokeWidth="3" />
+          <path d={ma7Path} fill="none" stroke="#10b981" strokeWidth="2" />
+          <path d={ma30Path} fill="none" stroke="#f59e0b" strokeWidth="2" />
+          <path d={forecastPath} fill="none" stroke="#7c3aed" strokeWidth="3" strokeDasharray="8 6" />
+        </svg>
+      </div>
+      <div style={{ display: "flex", gap: 16, flexWrap: "wrap", marginTop: 12, fontSize: 13, color: "#475569" }}>
+        <span>蓝线：收盘价</span>
+        <span>绿线：MA7</span>
+        <span>橙线：MA30</span>
+        <span>紫线：预测</span>
+      </div>
+    </div>
+  );
+}
 
 const styles = {
   page: {
