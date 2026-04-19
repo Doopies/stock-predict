@@ -515,4 +515,12 @@ export default function StockForecastSimple() {
       </div>
     </div>
   );
+
+
+
+
+
+
+
+
 }
