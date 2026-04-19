@@ -156,7 +156,6 @@ function buildLinePath(values: number[], width: number, height: number, padding 
   if (!values.length) return "";
   const min = Math.min(...values);
   const max = Math.max(...values);
-  const usableWidth = width - padding * 2;
   const usableHeight = height - padding * 2;
   return values
     .map((value, index) => {
