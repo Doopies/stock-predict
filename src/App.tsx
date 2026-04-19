@@ -158,6 +158,7 @@ function buildLinePath(values: number[], width: number, height: number, padding 
   const max = Math.max(...values);
   const usableHeight = height - padding * 2;
   const usableWidth = width - padding * 2;
+
   return values
     .map((value, index) => {
       const x = padding + (index / Math.max(1, values.length - 1)) * usableWidth;
@@ -334,8 +335,12 @@ export default function StockForecastSimple() {
   const latestHistory = shownHistory[shownHistory.length - 1];
   const firstHistory = shownHistory[0];
   const latestForecast = futureData[futureData.length - 1];
-  const rangeChange = latestHistory && firstHistory ? round(((latestHistory.close - firstHistory.close) / firstHistory.close) * 100) : 0;
-  const forecastChange = latestHistory && latestForecast?.forecast ? round(((latestForecast.forecast - latestHistory.close) / latestHistory.close) * 100) : 0;
+  const rangeChange =
+    latestHistory && firstHistory ? round(((latestHistory.close - firstHistory.close) / firstHistory.close) * 100) : 0;
+  const forecastChange =
+    latestHistory && latestForecast?.forecast
+      ? round(((latestForecast.forecast - latestHistory.close) / latestHistory.close) * 100)
+      : 0;
   const insight = shownHistory.length ? buildInsight(shownHistory) : "等待数据加载";
   const marketSnapshot = buildMarketSnapshot(activeTicker, latestHistory?.close || 100);
   const isMobile = typeof window !== "undefined" && window.innerWidth < 900;
@@ -360,14 +365,23 @@ export default function StockForecastSimple() {
               />
               <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 10 }}>
                 {STOCK_SUGGESTIONS.map((item) => (
-                  <button key={item} style={styles.chip} onClick={() => { setTickerInput(item); loadData(item); }}>
+                  <button
+                    key={item}
+                    style={styles.chip}
+                    onClick={() => {
+                      setTickerInput(item);
+                      loadData(item);
+                    }}
+                  >
                     {item}
                   </button>
                 ))}
               </div>
             </div>
             <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-              <button style={styles.button} onClick={() => loadData(tickerInput)}>{loading ? "加载中..." : "开始分析"}</button>
+              <button style={styles.button} onClick={() => loadData(tickerInput)}>
+                {loading ? "加载中..." : "开始分析"}
+              </button>
             </div>
           </div>
 
@@ -431,7 +445,8 @@ export default function StockForecastSimple() {
                   <div style={{ marginTop: 4, fontSize: 18, fontWeight: 700 }}>{item.ticker}</div>
                   <div style={{ marginTop: 10, fontSize: 28, fontWeight: 800 }}>${item.price}</div>
                   <div style={{ marginTop: 4, color: item.change >= 0 ? "#059669" : "#e11d48", fontWeight: 700 }}>
-                    {item.change >= 0 ? "+" : ""}{item.change}%
+                    {item.change >= 0 ? "+" : ""}
+                    {item.change}%
                   </div>
                 </div>
               ))}
