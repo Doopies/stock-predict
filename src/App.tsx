@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useState } from "react";
+import { fetchRealStock, type StockPoint } from "./api/stock";
 
 type PricePoint = {
   date: string;
@@ -12,10 +13,13 @@ type PricePoint = {
 };
 
 type TimeRange = "1M" | "3M" | "6M" | "1Y";
+type DataSource = "live" | "cache" | "mock";
 
 const DEFAULT_TICKER = "AAPL";
 const RANGE_OPTIONS: TimeRange[] = ["1M", "3M", "6M", "1Y"];
 const STOCK_SUGGESTIONS = ["AAPL", "MSFT", "NVDA", "TSLA", "AMZN", "META", "GOOGL", "NFLX"];
+const CACHE_PREFIX = "stock_cache_";
+const CACHE_TTL = 15 * 60 * 1000;
 
 function round(num: number, digits = 2) {
   return Number(num.toFixed(digits));
@@ -57,7 +61,7 @@ function linearRegressionForecast(values: number[], steps: number) {
   });
 }
 
-function generateMockSeries(ticker: string) {
+function generateMockSeries(ticker: string): StockPoint[] {
   const today = new Date();
   const seed = ticker
     .toUpperCase()
@@ -66,7 +70,7 @@ function generateMockSeries(ticker: string) {
 
   const totalDays = 260;
   let price = 80 + (seed % 120);
-  const series: { date: string; close: number }[] = [];
+  const series: StockPoint[] = [];
 
   for (let i = totalDays - 1; i >= 0; i--) {
     const d = new Date(today);
@@ -75,6 +79,7 @@ function generateMockSeries(ticker: string) {
     const noise = ((seed * (i + 3)) % 11 - 5) * 0.35;
     const momentum = (seed % 2 === 0 ? 0.18 : -0.02) + ((seed % 7) - 3) * 0.01;
     price = Math.max(10, price + drift + noise + momentum);
+
     series.push({
       date: d.toISOString().slice(0, 10),
       close: round(price),
@@ -84,7 +89,7 @@ function generateMockSeries(ticker: string) {
   return series;
 }
 
-function buildChartData(series: { date: string; close: number }[]) {
+function buildChartData(series: StockPoint[]) {
   const closes = series.map((d) => d.close);
   const ma7 = movingAverage(closes, 7);
   const ma30 = movingAverage(closes, 30);
@@ -126,7 +131,7 @@ function getRangeCount(range: TimeRange, length: number) {
   return Math.min(map[range], length);
 }
 
-function buildInsight(history: PricePoint[]) {
+function buildInsight(history: PricePoint[], dataSource: DataSource) {
   const latest = history[history.length - 1];
   const prev = history[Math.max(0, history.length - 6)];
   const start = history[0];
@@ -134,7 +139,10 @@ function buildInsight(history: PricePoint[]) {
   const changeAll = start ? ((latest.close - start.close) / start.close) * 100 : 0;
   const shortTrend = change5 > 1.5 ? "短期偏强" : change5 < -1.5 ? "短期偏弱" : "短期震荡";
   const longTrend = changeAll > 8 ? "中期上行" : changeAll < -8 ? "中期下行" : "中期震荡";
-  return `${shortTrend}，${longTrend}。最近 5 日变动 ${round(change5)}%，当前页面为演示版模拟数据。`;
+  const sourceText =
+    dataSource === "live" ? "当前显示真实数据。" : dataSource === "cache" ? "当前显示缓存数据。" : "当前显示模拟数据。";
+
+  return `${shortTrend}，${longTrend}。最近 5 日变动 ${round(change5)}%。${sourceText}`;
 }
 
 function buildMarketSnapshot(activeTicker: string, lastPrice: number) {
@@ -168,6 +176,35 @@ function buildLinePath(values: number[], width: number, height: number, padding 
     .join(" ");
 }
 
+function getCachedStock(ticker: string): StockPoint[] | null {
+  try {
+    const raw = localStorage.getItem(`${CACHE_PREFIX}${ticker.toUpperCase()}`);
+    if (!raw) return null;
+
+    const parsed = JSON.parse(raw);
+    if (!parsed?.timestamp || !Array.isArray(parsed?.data)) return null;
+
+    if (Date.now() - parsed.timestamp > CACHE_TTL) return null;
+    return parsed.data as StockPoint[];
+  } catch {
+    return null;
+  }
+}
+
+function setCachedStock(ticker: string, data: StockPoint[]) {
+  try {
+    localStorage.setItem(
+      `${CACHE_PREFIX}${ticker.toUpperCase()}`,
+      JSON.stringify({
+        timestamp: Date.now(),
+        data,
+      })
+    );
+  } catch {
+    // 忽略缓存写入失败
+  }
+}
+
 function ChartCard({
   title,
   history,
@@ -196,8 +233,12 @@ function ChartCard({
 
   const forecastPath = forecastValues
     .map((value, index) => {
-      const x = width * 0.82 + (index / Math.max(1, forecastValues.length - 1)) * (width * 0.18 - padding);
-      const y = padding + (1 - (value - min) / Math.max(1, max - min || 1)) * usableHeight;
+      const x =
+        width * 0.82 +
+        (index / Math.max(1, forecastValues.length - 1)) * (width * 0.18 - padding);
+      const y =
+        padding +
+        (1 - (value - min) / Math.max(1, max - min || 1)) * usableHeight;
       return `${index === 0 ? "M" : "L"}${x},${y}`;
     })
     .join(" ");
@@ -206,7 +247,10 @@ function ChartCard({
     <div style={styles.card}>
       <div style={styles.sectionTitle}>{title}</div>
       <div style={{ overflowX: "auto" }}>
-        <svg viewBox={`0 0 ${width} ${height}`} style={{ width: "100%", minWidth: 600, height: 320, display: "block" }}>
+        <svg
+          viewBox={`0 0 ${width} ${height}`}
+          style={{ width: "100%", minWidth: 600, height: 320, display: "block" }}
+        >
           <rect x="0" y="0" width={width} height={height} fill="#ffffff" rx="16" />
           {[0, 1, 2, 3].map((i) => (
             <line
@@ -222,10 +266,25 @@ function ChartCard({
           <path d={historyPath} fill="none" stroke="#2563eb" strokeWidth="3" />
           <path d={ma7Path} fill="none" stroke="#10b981" strokeWidth="2" />
           <path d={ma30Path} fill="none" stroke="#f59e0b" strokeWidth="2" />
-          <path d={forecastPath} fill="none" stroke="#7c3aed" strokeWidth="3" strokeDasharray="8 6" />
+          <path
+            d={forecastPath}
+            fill="none"
+            stroke="#7c3aed"
+            strokeWidth="3"
+            strokeDasharray="8 6"
+          />
         </svg>
       </div>
-      <div style={{ display: "flex", gap: 16, flexWrap: "wrap", marginTop: 12, fontSize: 13, color: "#475569" }}>
+      <div
+        style={{
+          display: "flex",
+          gap: 16,
+          flexWrap: "wrap",
+          marginTop: 12,
+          fontSize: 13,
+          color: "#475569",
+        }}
+      >
         <span>蓝线：收盘价</span>
         <span>绿线：MA7</span>
         <span>橙线：MA30</span>
@@ -306,18 +365,48 @@ export default function StockForecastSimple() {
   const [futureData, setFutureData] = useState<PricePoint[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  const [dataSource, setDataSource] = useState<DataSource>("mock");
+  const [lastUpdated, setLastUpdated] = useState("");
 
-  function loadData(ticker: string) {
+  async function loadData(ticker: string) {
     try {
       setLoading(true);
       setError("");
-      const series = generateMockSeries(ticker);
+
+      const symbol = ticker.toUpperCase().trim();
+      const cached = getCachedStock(symbol);
+
+      if (cached) {
+        const built = buildChartData(cached);
+        setHistoryData(built.history);
+        setFutureData(built.future);
+        setActiveTicker(symbol);
+        setDataSource("cache");
+        setLastUpdated(new Date().toLocaleTimeString());
+        return;
+      }
+
+      const series = await fetchRealStock(symbol);
+      setCachedStock(symbol, series);
+
       const built = buildChartData(series);
       setHistoryData(built.history);
       setFutureData(built.future);
+      setActiveTicker(symbol);
+      setDataSource("live");
+      setLastUpdated(new Date().toLocaleTimeString());
+    } catch (err) {
+      console.error("真实股票数据加载失败:", err);
+
+      const fallbackSeries = generateMockSeries(ticker);
+      const fallbackBuilt = buildChartData(fallbackSeries);
+
+      setHistoryData(fallbackBuilt.history);
+      setFutureData(fallbackBuilt.future);
       setActiveTicker(ticker.toUpperCase());
-    } catch {
-      setError("加载失败");
+      setDataSource("mock");
+      setLastUpdated(new Date().toLocaleTimeString());
+      setError("真实数据加载失败，当前显示模拟数据。");
     } finally {
       setLoading(false);
     }
@@ -335,9 +424,13 @@ export default function StockForecastSimple() {
   const latestHistory = shownHistory[shownHistory.length - 1];
   const firstHistory = shownHistory[0];
   const latestForecast = futureData[futureData.length - 1];
-  const rangeChange = latestHistory && firstHistory ? round(((latestHistory.close - firstHistory.close) / firstHistory.close) * 100) : 0;
-  const forecastChange = latestHistory && latestForecast?.forecast ? round(((latestForecast.forecast - latestHistory.close) / latestHistory.close) * 100) : 0;
-  const insight = shownHistory.length ? buildInsight(shownHistory) : "等待数据加载";
+  const rangeChange =
+    latestHistory && firstHistory ? round(((latestHistory.close - firstHistory.close) / firstHistory.close) * 100) : 0;
+  const forecastChange =
+    latestHistory && latestForecast?.forecast
+      ? round(((latestForecast.forecast - latestHistory.close) / latestHistory.close) * 100)
+      : 0;
+  const insight = shownHistory.length ? buildInsight(shownHistory, dataSource) : "等待数据加载";
   const marketSnapshot = buildMarketSnapshot(activeTicker, latestHistory?.close || 100);
   const isMobile = typeof window !== "undefined" && window.innerWidth < 900;
 
@@ -345,10 +438,15 @@ export default function StockForecastSimple() {
     <div style={styles.page}>
       <div style={styles.container}>
         <div style={styles.hero}>
-          <div style={{ fontSize: 12, opacity: 0.9, marginBottom: 10 }}>Stock Forecast Pro · 演示版</div>
+          <div style={{ fontSize: 12, opacity: 0.9, marginBottom: 10 }}>
+            数据来源：
+            {dataSource === "live" ? "真实数据" : dataSource === "cache" ? "缓存数据" : "模拟数据"}
+            {lastUpdated ? ` · 更新时间：${lastUpdated}` : ""}
+          </div>
+
           <h1 style={{ fontSize: isMobile ? 32 : 48, margin: 0, lineHeight: 1.1 }}>股票趋势分析与未来走势推演</h1>
           <p style={{ marginTop: 14, color: "#cbd5e1", lineHeight: 1.7, maxWidth: 800 }}>
-            这版只用模拟数据，目的是先保证你本地直接看到完整页面。后面再把真实 API 接进去。
+            优先尝试加载真实股票数据；如果接口失败，则自动切换为模拟数据，保证页面可用。
           </p>
 
           <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "1.2fr auto", gap: 12, marginTop: 18 }}>
@@ -361,14 +459,23 @@ export default function StockForecastSimple() {
               />
               <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 10 }}>
                 {STOCK_SUGGESTIONS.map((item) => (
-                  <button key={item} style={styles.chip} onClick={() => { setTickerInput(item); loadData(item); }}>
+                  <button
+                    key={item}
+                    style={styles.chip}
+                    onClick={() => {
+                      setTickerInput(item);
+                      loadData(item);
+                    }}
+                  >
                     {item}
                   </button>
                 ))}
               </div>
             </div>
             <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-              <button style={styles.button} onClick={() => loadData(tickerInput)}>{loading ? "加载中..." : "开始分析"}</button>
+              <button style={styles.button} onClick={() => loadData(tickerInput)} disabled={loading}>
+                {loading ? "加载中..." : "开始分析"}
+              </button>
             </div>
           </div>
 
@@ -432,7 +539,8 @@ export default function StockForecastSimple() {
                   <div style={{ marginTop: 4, fontSize: 18, fontWeight: 700 }}>{item.ticker}</div>
                   <div style={{ marginTop: 10, fontSize: 28, fontWeight: 800 }}>${item.price}</div>
                   <div style={{ marginTop: 4, color: item.change >= 0 ? "#059669" : "#e11d48", fontWeight: 700 }}>
-                    {item.change >= 0 ? "+" : ""}{item.change}%
+                    {item.change >= 0 ? "+" : ""}
+                    {item.change}%
                   </div>
                 </div>
               ))}
@@ -442,9 +550,9 @@ export default function StockForecastSimple() {
           <div style={styles.card}>
             <div style={styles.sectionTitle}>下一步产品扩展</div>
             <div style={{ display: "flex", flexDirection: "column", gap: 12, fontSize: 14, color: "#475569", lineHeight: 1.7 }}>
-              <div style={{ background: "#f8fafc", borderRadius: 16, padding: 14 }}>1. 先把这版发布到 Vercel，作为演示站。</div>
-              <div style={{ background: "#f8fafc", borderRadius: 16, padding: 14 }}>2. 再接真实股票 API 和后端接口。</div>
-              <div style={{ background: "#f8fafc", borderRadius: 16, padding: 14 }}>3. 最后再做提醒、订阅和商业化页面。</div>
+              <div style={{ background: "#f8fafc", borderRadius: 16, padding: 14 }}>1. 继续接资讯与情绪统计模块。</div>
+              <div style={{ background: "#f8fafc", borderRadius: 16, padding: 14 }}>2. 增加最近搜索、收藏与提醒功能。</div>
+              <div style={{ background: "#f8fafc", borderRadius: 16, padding: 14 }}>3. 后续再接登录系统和付费能力。</div>
             </div>
           </div>
         </div>
